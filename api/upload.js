@@ -1,4 +1,4 @@
-const formidable = require('formidable');
+const { IncomingForm } = require('formidable');
 const cloudinary = require('cloudinary').v2;
 
 // Cloudinary yapılandırması
@@ -25,47 +25,52 @@ export default async function handler(req, res) {
 
   try {
     // Formidable ile dosya parse etme
-    const form = formidable({
+    const form = new IncomingForm({
       maxFileSize: 10 * 1024 * 1024, // 10MB limit
       keepExtensions: true,
     });
 
-    const [fields, files] = await form.parse(req);
-    
-    if (!files.file || !files.file[0]) {
-      return res.status(400).json({ error: 'Dosya bulunamadı' });
-    }
-
-    const file = files.file[0];
-    
-    // Dosya tipini kontrol et
-    const allowedTypes = ['image/', 'video/'];
-    const isAllowedType = allowedTypes.some(type => file.mimetype.startsWith(type));
-    
-    if (!isAllowedType) {
-      return res.status(400).json({ error: 'Sadece resim ve video dosyaları destekleniyor' });
-    }
-
-    // Cloudinary'e yükle
-    const uploadResult = await cloudinary.uploader.upload(file.filepath, {
-      resource_type: file.mimetype.startsWith('video/') ? 'video' : 'image',
-      folder: 'photo-uploader', // Cloudinary'de klasör adı
-      use_filename: true,
-      unique_filename: true,
-    });
-
-    // Başarılı yanıt
-    res.status(200).json({
-      success: true,
-      message: 'Dosya başarıyla yüklendi!',
-      data: {
-        id: uploadResult.public_id,
-        url: uploadResult.secure_url,
-        originalName: file.originalFilename,
-        size: file.size,
-        type: file.mimetype,
-        uploadDate: new Date().toISOString()
+    form.parse(req, async (err, fields, files) => {
+      if (err) {
+        console.error('Parse error:', err);
+        return res.status(400).json({ error: 'Dosya parse hatası' });
       }
+
+      if (!files.file) {
+        return res.status(400).json({ error: 'Dosya bulunamadı' });
+      }
+
+      const file = Array.isArray(files.file) ? files.file[0] : files.file;
+      
+      // Dosya tipini kontrol et
+      const allowedTypes = ['image/', 'video/'];
+      const isAllowedType = allowedTypes.some(type => file.mimetype.startsWith(type));
+      
+      if (!isAllowedType) {
+        return res.status(400).json({ error: 'Sadece resim ve video dosyaları destekleniyor' });
+      }
+
+      // Cloudinary'e yükle
+      const uploadResult = await cloudinary.uploader.upload(file.filepath, {
+        resource_type: file.mimetype.startsWith('video/') ? 'video' : 'image',
+        folder: 'photo-uploader', // Cloudinary'de klasör adı
+        use_filename: true,
+        unique_filename: true,
+      });
+
+      // Başarılı yanıt
+      res.status(200).json({
+        success: true,
+        message: 'Dosya başarıyla yüklendi!',
+        data: {
+          id: uploadResult.public_id,
+          url: uploadResult.secure_url,
+          originalName: file.originalFilename,
+          size: file.size,
+          type: file.mimetype,
+          uploadDate: new Date().toISOString()
+        }
+      });
     });
 
   } catch (error) {
