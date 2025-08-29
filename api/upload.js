@@ -1,4 +1,3 @@
-const { IncomingForm } = require('formidable');
 const cloudinary = require('cloudinary').v2;
 
 // Cloudinary yapılandırması
@@ -24,53 +23,108 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Formidable ile dosya parse etme
-    const form = new IncomingForm({
-      maxFileSize: 10 * 1024 * 1024, // 10MB limit
-      keepExtensions: true,
+    console.log('Upload request received');
+    console.log('Content-Type:', req.headers['content-type']);
+    
+    // Multipart form data parser
+    const parseMultipart = (req) => {
+      return new Promise((resolve, reject) => {
+        const boundary = req.headers['content-type']?.split('boundary=')[1];
+        if (!boundary) {
+          reject(new Error('No boundary found'));
+          return;
+        }
+
+        let data = '';
+        req.setEncoding('binary');
+        
+        req.on('data', chunk => {
+          data += chunk;
+        });
+        
+        req.on('end', () => {
+          const parts = data.split(`--${boundary}`);
+          const files = {};
+          
+          for (const part of parts) {
+            if (part.includes('Content-Disposition: form-data')) {
+              const nameMatch = part.match(/name="([^"]+)"/);
+              const filenameMatch = part.match(/filename="([^"]+)"/);
+              const contentTypeMatch = part.match(/Content-Type: ([^\r\n]+)/);
+              
+              if (nameMatch && filenameMatch && contentTypeMatch) {
+                const name = nameMatch[1];
+                const filename = filenameMatch[1];
+                const contentType = contentTypeMatch[1];
+                
+                // Find where the file data starts (after double CRLF)
+                const dataStart = part.indexOf('\r\n\r\n') + 4;
+                const fileData = part.substring(dataStart, part.lastIndexOf('\r\n'));
+                
+                files[name] = {
+                  originalFilename: filename,
+                  mimetype: contentType,
+                  size: Buffer.byteLength(fileData, 'binary'),
+                  data: Buffer.from(fileData, 'binary')
+                };
+              }
+            }
+          }
+          
+          resolve(files);
+        });
+        
+        req.on('error', reject);
+      });
+    };
+
+    const files = await parseMultipart(req);
+    console.log('Parsed files:', Object.keys(files));
+    
+    if (!files.file) {
+      return res.status(400).json({ error: 'Dosya bulunamadı' });
+    }
+
+    const file = files.file;
+    console.log('File info:', {
+      name: file.originalFilename,
+      type: file.mimetype,
+      size: file.size
+    });
+    
+    // Dosya tipini kontrol et
+    const allowedTypes = ['image/', 'video/'];
+    const isAllowedType = allowedTypes.some(type => file.mimetype.startsWith(type));
+    
+    if (!isAllowedType) {
+      return res.status(400).json({ error: 'Sadece resim ve video dosyaları destekleniyor' });
+    }
+
+    // Base64'e çevir ve Cloudinary'e yükle
+    const base64Data = `data:${file.mimetype};base64,${file.data.toString('base64')}`;
+    
+    console.log('Uploading to Cloudinary...');
+    const uploadResult = await cloudinary.uploader.upload(base64Data, {
+      resource_type: file.mimetype.startsWith('video/') ? 'video' : 'image',
+      folder: 'photo-uploader',
+      use_filename: true,
+      unique_filename: true,
     });
 
-    form.parse(req, async (err, fields, files) => {
-      if (err) {
-        console.error('Parse error:', err);
-        return res.status(400).json({ error: 'Dosya parse hatası' });
+    console.log('Upload successful:', uploadResult.public_id);
+
+    // Başarılı yanıt
+    res.status(200).json({
+      success: true,
+      message: 'Dosya başarıyla yüklendi!',
+      data: {
+        id: uploadResult.public_id,
+        url: uploadResult.secure_url,
+        originalName: file.originalFilename,
+        size: file.size,
+        type: file.mimetype,
+        uploadDate: new Date().toISOString()
       }
-
-      if (!files.file) {
-        return res.status(400).json({ error: 'Dosya bulunamadı' });
-      }
-
-      const file = Array.isArray(files.file) ? files.file[0] : files.file;
-      
-      // Dosya tipini kontrol et
-      const allowedTypes = ['image/', 'video/'];
-      const isAllowedType = allowedTypes.some(type => file.mimetype.startsWith(type));
-      
-      if (!isAllowedType) {
-        return res.status(400).json({ error: 'Sadece resim ve video dosyaları destekleniyor' });
-      }
-
-      // Cloudinary'e yükle
-      const uploadResult = await cloudinary.uploader.upload(file.filepath, {
-        resource_type: file.mimetype.startsWith('video/') ? 'video' : 'image',
-        folder: 'photo-uploader', // Cloudinary'de klasör adı
-        use_filename: true,
-        unique_filename: true,
-      });
-
-      // Başarılı yanıt
-      res.status(200).json({
-        success: true,
-        message: 'Dosya başarıyla yüklendi!',
-        data: {
-          id: uploadResult.public_id,
-          url: uploadResult.secure_url,
-          originalName: file.originalFilename,
-          size: file.size,
-          type: file.mimetype,
-          uploadDate: new Date().toISOString()
-        }
-      });
     });
 
   } catch (error) {
