@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fotoğraf & Video Yükleme</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .upload-area {
+            padding: 40px;
+            text-align: center;
+        }
+
+        .upload-box {
+            border: 3px dashed #4facfe;
+            border-radius: 15px;
+            padding: 60px 20px;
+            background: #f8fffe;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 30px;
+        }
+
+        .upload-box:hover {
+            border-color: #00f2fe;
+            background: #f0fffe;
+            transform: translateY(-2px);
+        }
+
+        .upload-box.dragover {
+            border-color: #00f2fe;
+            background: #e6fffd;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #4facfe;
+            margin-bottom: 20px;
+        }
+
+        .upload-text h3 {
+            color: #333;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .upload-text p {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .upload-btn {
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(79, 172, 254, 0.3);
+        }
+
+        .files-preview {
+            padding: 0 40px 40px;
+        }
+
+        .preview-title {
+            font-size: 1.5rem;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .preview-item {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+            position: relative;
+        }
+
+        .preview-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .preview-item:hover .delete-btn {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.8);
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .delete-btn:hover {
+            background: rgba(255, 0, 0, 1);
+            transform: scale(1.1);
+        }
+
+        .upload-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            transition: opacity 0.3s ease;
+        }
+
+        .upload-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .upload-spinner {
+            font-size: 2rem;
+            animation: spin 1s linear infinite;
+        }
+
+        .upload-status {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #4facfe;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .preview-item[data-upload-status="success"] .upload-overlay {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .preview-item[data-upload-status="error"] .upload-overlay {
+            background: rgba(255, 0, 0, 0.1);
+        }
+
+        .preview-item[data-upload-status="error"] .upload-status {
+            color: red;
+        }
+
+        .preview-item img, .preview-item video {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+
+        .preview-info {
+            padding: 15px;
+        }
+
+        .preview-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        .preview-size {
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #f0f0f0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            font-style: italic;
+            padding: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .upload-area {
+                padding: 20px;
+            }
+            
+            .upload-box {
+                padding: 40px 15px;
+            }
+            
+            .preview-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 15px;
+            }
+            
+            .files-preview {
+                padding: 0 20px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📸 Fotoğraf & Video Paylaş</h1>
+            <p>Fotoğraflarınızı ve videolarınızı kolayca yükleyin ve paylaşın</p>
+        </div>
+
+        <div class="upload-area">
+            <div class="upload-box" id="uploadBox">
+                <div class="upload-icon">☁️</div>
+                <div class="upload-text">
+                    <h3>Dosyalarınızı buraya sürükleyin</h3>
+                    <p>veya tıklayarak seçin (Fotoğraf ve Video)</p>
+                </div>
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    Dosya Seç
+                </button>
+                <button class="upload-btn" onclick="showUploadedUrls()" style="margin-left: 10px; background: linear-gradient(45deg, #ff6b6b, #feca57);">
+                    URL'leri Göster
+                </button>
+            </div>
+            <input type="file" id="fileInput" class="file-input" multiple accept="image/*,video/*">
+        </div>
+
+        <div class="files-preview">
+            <h3 class="preview-title" id="previewTitle" style="display: none;">Yüklenen Dosyalar</h3>
+            <div class="preview-grid" id="previewGrid">
+                <div class="empty-state" id="emptyState">
+                    Henüz dosya yüklenmedi. Yukarıdaki alana dosyalarınızı sürükleyin veya seçin.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const uploadBox = document.getElementById('uploadBox');
+        const fileInput = document.getElementById('fileInput');
+        const previewGrid = document.getElementById('previewGrid');
+        const previewTitle = document.getElementById('previewTitle');
+        const emptyState = document.getElementById('emptyState');
+        
+        let uploadedFiles = [];
+        let uploadedUrls = []; // Sunucuya yüklenen dosyaların URL'leri
+
+        // API base URL - deploy edildikten sonra değişecek
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000' 
+            : window.location.origin;
+
+        // Dosya input değişikliği
+        fileInput.addEventListener('change', handleFiles);
+
+        // Drag and drop olayları
+        uploadBox.addEventListener('click', () => fileInput.click());
+        uploadBox.addEventListener('dragover', handleDragOver);
+        uploadBox.addEventListener('dragleave', handleDragLeave);
+        uploadBox.addEventListener('drop', handleDrop);
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadBox.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            uploadBox.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            uploadBox.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            processFiles(files);
+        }
+
+        function handleFiles(e) {
+            const files = e.target.files;
+            processFiles(files);
+        }
+
+        function processFiles(files) {
+            console.log('Dosya işleniyor:', files.length, 'adet dosya');
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                console.log('Dosya:', file.name, 'Tip:', file.type, 'Boyut:', file.size);
+                
+                if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+                    uploadedFiles.push(file);
+                    createPreview(file);
+                    uploadToServer(file); // Sunucuya yükle
+                } else {
+                    console.log('Desteklenmeyen dosya tipi:', file.type);
+                    alert('Desteklenmeyen dosya tipi: ' + file.name);
+                }
+            }
+            
+            if (uploadedFiles.length > 0) {
+                emptyState.style.display = 'none';
+                previewTitle.style.display = 'block';
+            }
+        }
+
+        function createPreview(file) {
+            console.log('Önizleme oluşturuluyor:', file.name);
+            
+            const previewItem = document.createElement('div');
+            previewItem.className = 'preview-item';
+            previewItem.dataset.fileName = file.name;
+            previewItem.dataset.uploadStatus = 'uploading'; // Yükleme durumu
+
+            const isVideo = file.type.startsWith('video/');
+            const mediaElement = isVideo ? 'video' : 'img';
+            const controls = isVideo ? 'controls' : '';
+
+            previewItem.innerHTML = `
+                <button class="delete-btn" onclick="removeFile(this)">✕</button>
+                <div class="upload-overlay">
+                    <div class="upload-spinner">⏳</div>
+                    <div class="upload-status">Yükleniyor...</div>
+                </div>
+                <${mediaElement} ${controls} alt="${file.name}"></${mediaElement}>
+                <div class="preview-info">
+                    <div class="preview-name">${file.name}</div>
+                    <div class="preview-size">${formatFileSize(file.size)}</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                </div>
+            `;
+
+            previewGrid.appendChild(previewItem);
+
+            // Dosya okuma ve önizleme (lokal önizleme)
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                console.log('Dosya okundu:', file.name);
+                const mediaEl = previewItem.querySelector(mediaElement);
+                mediaEl.src = e.target.result;
+            };
+            
+            reader.onerror = function(e) {
+                console.error('Dosya okuma hatası:', e);
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function removeFile(button) {
+            const previewItem = button.parentElement;
+            const fileName = previewItem.dataset.fileName;
+            
+            // Dosyayı uploadedFiles listesinden çıkar
+            uploadedFiles = uploadedFiles.filter(file => file.name !== fileName);
+            
+            // Eğer sunucuya yüklenmişse URL'yi de kaldır
+            uploadedUrls = uploadedUrls.filter(item => item.originalName !== fileName);
+            
+            // DOM'dan kaldır
+            previewItem.remove();
+            
+            // Eğer hiç dosya kalmadıysa boş durum mesajını göster
+            if (uploadedFiles.length === 0) {
+                emptyState.style.display = 'block';
+                previewTitle.style.display = 'none';
+            }
+            
+            console.log('Dosya silindi:', fileName);
+        }
+
+        async function uploadToServer(file) {
+            console.log('Sunucuya yükleniyor:', file.name);
+            
+            // İlgili preview item'ı bul
+            const previewItem = document.querySelector(`[data-file-name="${file.name}"]`);
+            const progressFill = previewItem.querySelector('.progress-fill');
+            const uploadStatus = previewItem.querySelector('.upload-status');
+            
+            try {
+                // FormData oluştur
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Sunucuya gönder
+                const response = await fetch(`${API_BASE}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Başarılı yükleme
+                    console.log('Yükleme başarılı:', result.data);
+                    
+                    // Yüklenen URL'yi sakla
+                    uploadedUrls.push(result.data);
+                    
+                    // UI güncelle
+                    previewItem.dataset.uploadStatus = 'success';
+                    progressFill.style.width = '100%';
+                    uploadStatus.textContent = 'Yüklendi ✓';
+                    
+                    // Overlay'i gizle
+                    setTimeout(() => {
+                        const overlay = previewItem.querySelector('.upload-overlay');
+                        overlay.classList.add('hidden');
+                    }, 1000);
+                    
+                } else {
+                    throw new Error(result.error || 'Bilinmeyen hata');
+                }
+                
+            } catch (error) {
+                console.error('Yükleme hatası:', error);
+                
+                // Hata durumu
+                previewItem.dataset.uploadStatus = 'error';
+                uploadStatus.textContent = 'Hata ✗';
+                progressFill.style.width = '0%';
+                
+                // Kullanıcıya bilgi ver
+                alert(`Dosya yüklenirken hata: ${file.name}\nHata: ${error.message}`);
+            }
+        }
+
+        // Yüklenen dosyaların URL'lerini göster (test için)
+        function showUploadedUrls() {
+            console.log('Yüklenen dosyalar:', uploadedUrls);
+            if (uploadedUrls.length > 0) {
+                const urls = uploadedUrls.map(item => item.url).join('\n');
+                alert('Yüklenen dosya URL\'leri:\n\n' + urls);
+            } else {
+                alert('Henüz yüklenmiş dosya yok.');
+            }
+        }
+
+        // Sayfa yüklendiğinde mesaj
+        window.addEventListener('load', function() {
+            console.log('Fotoğraf yükleme sayfası hazır!');
+        });
+    </script>
+</body>
+</html>
