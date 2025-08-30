@@ -1,11 +1,14 @@
-const cloudinary = require('cloudinary').v2;
+const AWS = require('aws-sdk');
+const { v4: uuidv4 } = require('uuid');
 
-// Cloudinary yapılandırması
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+// AWS S3 yapılandırması
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION || 'eu-west-1'
 });
+
+const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME;
 
 export default async function handler(req, res) {
   // CORS headers
@@ -23,7 +26,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('Upload request received');
+    console.log('Upload request received for AWS S3');
     console.log('Content-Type:', req.headers['content-type']);
     
     // Multipart form data parser
@@ -95,7 +98,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Dosya bulunamadı' });
     }
 
-    // User ID'yi al (frontend'den gönderilen)
+    // User ID'yi al
     const userId = fields.userId || 'default-user';
     console.log('User ID:', userId);
 
@@ -114,39 +117,59 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Sadece resim ve video dosyaları destekleniyor' });
     }
 
-    // Base64'e çevir ve Cloudinary'e yükle
-    const base64Data = `data:${file.mimetype};base64,${file.data.toString('base64')}`;
+    // Dosya adını güvenli hale getir ve unique yap
+    const fileExtension = file.originalFilename.split('.').pop();
+    const safeFileName = file.originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const uniqueFileName = `${Date.now()}_${uuidv4().slice(0, 8)}_${safeFileName}`;
     
-    console.log('Uploading to Cloudinary...');
-    const uploadResult = await cloudinary.uploader.upload(base64Data, {
-      resource_type: file.mimetype.startsWith('video/') ? 'video' : 'image',
-      folder: `photo-uploader/${userId}`, // Kullanıcıya özel klasör
-      use_filename: true,
-      unique_filename: true,
-    });
+    // S3 yükleme parametreleri
+    const s3Key = `memories-to-cloud/${userId}/${uniqueFileName}`;
+    
+    const uploadParams = {
+      Bucket: BUCKET_NAME,
+      Key: s3Key,
+      Body: file.data,
+      ContentType: file.mimetype,
+      ACL: 'public-read', // Dosyaları herkese açık yap
+      Metadata: {
+        'original-name': file.originalFilename,
+        'user-id': userId,
+        'upload-date': new Date().toISOString(),
+        'file-size': file.size.toString()
+      }
+    };
 
-    console.log('Upload successful:', uploadResult.public_id);
+    console.log('Uploading to AWS S3...');
+    console.log('S3 Key:', s3Key);
+    
+    // S3'e yükle
+    const uploadResult = await s3.upload(uploadParams).promise();
+    
+    console.log('S3 Upload successful:', uploadResult.Key);
+    console.log('S3 URL:', uploadResult.Location);
 
     // Başarılı yanıt
     res.status(200).json({
       success: true,
-      message: 'Dosya başarıyla yüklendi!',
+      message: 'Dosya başarıyla AWS S3\'e yüklendi!',
       data: {
-        id: uploadResult.public_id,
-        url: uploadResult.secure_url,
+        id: uploadResult.Key,
+        url: uploadResult.Location,
         originalName: file.originalFilename,
         size: file.size,
         type: file.mimetype,
         uploadDate: new Date().toISOString(),
-        userId: userId
+        userId: userId,
+        storage: 'aws-s3' // Hangi serviste olduğunu belirt
       }
     });
 
   } catch (error) {
-    console.error('Yükleme hatası:', error);
+    console.error('S3 yükleme hatası:', error);
     res.status(500).json({ 
-      error: 'Dosya yüklenirken hata oluştu',
-      details: error.message 
+      error: 'Dosya AWS S3\'e yüklenirken hata oluştu',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
