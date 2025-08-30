@@ -45,6 +45,7 @@ export default async function handler(req, res) {
         req.on('end', () => {
           const parts = data.split(`--${boundary}`);
           const files = {};
+          const fields = {};
           
           for (const part of parts) {
             if (part.includes('Content-Disposition: form-data')) {
@@ -52,38 +53,51 @@ export default async function handler(req, res) {
               const filenameMatch = part.match(/filename="([^"]+)"/);
               const contentTypeMatch = part.match(/Content-Type: ([^\r\n]+)/);
               
-              if (nameMatch && filenameMatch && contentTypeMatch) {
+              if (nameMatch) {
                 const name = nameMatch[1];
-                const filename = filenameMatch[1];
-                const contentType = contentTypeMatch[1];
                 
-                // Find where the file data starts (after double CRLF)
-                const dataStart = part.indexOf('\r\n\r\n') + 4;
-                const fileData = part.substring(dataStart, part.lastIndexOf('\r\n'));
-                
-                files[name] = {
-                  originalFilename: filename,
-                  mimetype: contentType,
-                  size: Buffer.byteLength(fileData, 'binary'),
-                  data: Buffer.from(fileData, 'binary')
-                };
+                if (filenameMatch && contentTypeMatch) {
+                  // Bu bir dosya
+                  const filename = filenameMatch[1];
+                  const contentType = contentTypeMatch[1];
+                  
+                  const dataStart = part.indexOf('\r\n\r\n') + 4;
+                  const fileData = part.substring(dataStart, part.lastIndexOf('\r\n'));
+                  
+                  files[name] = {
+                    originalFilename: filename,
+                    mimetype: contentType,
+                    size: Buffer.byteLength(fileData, 'binary'),
+                    data: Buffer.from(fileData, 'binary')
+                  };
+                } else {
+                  // Bu bir form field
+                  const dataStart = part.indexOf('\r\n\r\n') + 4;
+                  const fieldValue = part.substring(dataStart, part.lastIndexOf('\r\n'));
+                  fields[name] = fieldValue;
+                }
               }
             }
           }
           
-          resolve(files);
+          resolve({ files, fields });
         });
         
         req.on('error', reject);
       });
     };
 
-    const files = await parseMultipart(req);
+    const { files, fields } = await parseMultipart(req);
     console.log('Parsed files:', Object.keys(files));
+    console.log('Parsed fields:', fields);
     
     if (!files.file) {
       return res.status(400).json({ error: 'Dosya bulunamadı' });
     }
+
+    // User ID'yi al (frontend'den gönderilen)
+    const userId = fields.userId || 'default-user';
+    console.log('User ID:', userId);
 
     const file = files.file;
     console.log('File info:', {
@@ -106,7 +120,7 @@ export default async function handler(req, res) {
     console.log('Uploading to Cloudinary...');
     const uploadResult = await cloudinary.uploader.upload(base64Data, {
       resource_type: file.mimetype.startsWith('video/') ? 'video' : 'image',
-      folder: 'photo-uploader',
+      folder: `photo-uploader/${userId}`, // Kullanıcıya özel klasör
       use_filename: true,
       unique_filename: true,
     });
@@ -123,7 +137,8 @@ export default async function handler(req, res) {
         originalName: file.originalFilename,
         size: file.size,
         type: file.mimetype,
-        uploadDate: new Date().toISOString()
+        uploadDate: new Date().toISOString(),
+        userId: userId
       }
     });
 

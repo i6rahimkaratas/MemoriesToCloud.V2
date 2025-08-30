@@ -264,6 +264,19 @@
             padding: 40px;
         }
 
+        .loading-state {
+            text-align: center;
+            color: #4facfe;
+            padding: 40px;
+            font-size: 1.1rem;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 margin: 10px;
@@ -315,10 +328,10 @@
         </div>
 
         <div class="files-preview">
-            <h3 class="preview-title" id="previewTitle" style="display: none;">Yüklenen Dosyalar</h3>
+            <h3 class="preview-title" id="previewTitle" style="display: none;">Fotoğraflarınız</h3>
             <div class="preview-grid" id="previewGrid">
-                <div class="empty-state" id="emptyState">
-                    Henüz dosya yüklenmedi. Yukarıdaki alana dosyalarınızı sürükleyin veya seçin.
+                <div class="loading-state" id="loadingState">
+                    <span class="loading-spinner">⏳</span>Fotoğraflarınız yükleniyor...
                 </div>
             </div>
         </div>
@@ -329,15 +342,93 @@
         const fileInput = document.getElementById('fileInput');
         const previewGrid = document.getElementById('previewGrid');
         const previewTitle = document.getElementById('previewTitle');
-        const emptyState = document.getElementById('emptyState');
+        const loadingState = document.getElementById('loadingState');
         
         let uploadedFiles = [];
         let uploadedUrls = [];
+        let currentUserId = null;
 
         // API base URL
         const API_BASE = window.location.hostname === 'localhost' 
             ? 'http://localhost:3000' 
             : window.location.origin;
+
+        // Kullanıcı ID'si oluştur veya al
+        function getUserId() {
+            let userId = localStorage.getItem('photoUploadUserId');
+            if (!userId) {
+                // Yeni kullanıcı ID'si oluştur (timestamp + random)
+                userId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                localStorage.setItem('photoUploadUserId', userId);
+            }
+            return userId;
+        }
+
+        // Sayfa yüklendiğinde mevcut fotoğrafları getir
+        async function loadExistingPhotos() {
+            try {
+                currentUserId = getUserId();
+                console.log('Kullanıcı ID:', currentUserId);
+                
+                const response = await fetch(`${API_BASE}/api/get-photos?userId=${currentUserId}`);
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    console.log('Mevcut fotoğraflar bulundu:', result.data.length);
+                    
+                    // Loading state'i kaldır
+                    loadingState.remove();
+                    
+                    // Mevcut fotoğrafları göster
+                    result.data.forEach(photo => {
+                        createExistingPhotoPreview(photo);
+                    });
+                    
+                    previewTitle.style.display = 'block';
+                    previewTitle.textContent = `Fotoğraflarınız (${result.data.length})`;
+                } else {
+                    // Fotoğraf yok, empty state göster
+                    showEmptyState();
+                }
+                
+            } catch (error) {
+                console.error('Fotoğraf yükleme hatası:', error);
+                showEmptyState();
+            }
+        }
+
+        function showEmptyState() {
+            loadingState.remove();
+            const emptyState = document.createElement('div');
+            emptyState.className = 'empty-state';
+            emptyState.id = 'emptyState';
+            emptyState.textContent = 'Henüz fotoğraf yüklenmedi. Yukarıdaki alana fotoğraflarınızı sürükleyin veya seçin.';
+            previewGrid.appendChild(emptyState);
+        }
+
+        // Mevcut fotoğraf önizlemesi oluştur (Cloudinary'den gelen)
+        function createExistingPhotoPreview(photo) {
+            const previewItem = document.createElement('div');
+            previewItem.className = 'preview-item';
+            previewItem.dataset.fileName = photo.originalName;
+            previewItem.dataset.photoId = photo.id;
+            previewItem.dataset.uploadStatus = 'success';
+
+            const isVideo = photo.type === 'video';
+            const mediaElement = isVideo ? 'video' : 'img';
+            const controls = isVideo ? 'controls' : '';
+
+            previewItem.innerHTML = `
+                <button class="delete-btn" onclick="removeExistingFile(this)">✕</button>
+                <${mediaElement} ${controls} src="${photo.url}" alt="${photo.originalName}"></${mediaElement}>
+                <div class="preview-info">
+                    <div class="preview-name">${photo.originalName}</div>
+                    <div class="preview-size">${formatFileSize(photo.size)}</div>
+                </div>
+            `;
+
+            previewGrid.appendChild(previewItem);
+        }
 
         // Dosya seçim fonksiyonu
         function selectFiles() {
@@ -381,13 +472,19 @@
         function processFiles(files) {
             console.log('Dosya işleniyor:', files.length, 'adet dosya');
             
+            // Empty state varsa kaldır
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 console.log('Dosya:', file.name, 'Tip:', file.type, 'Boyut:', file.size);
                 
                 if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
                     uploadedFiles.push(file);
-                    createPreview(file);
+                    createNewFilePreview(file);
                     uploadToServer(file);
                 } else {
                     console.log('Desteklenmeyen dosya tipi:', file.type);
@@ -395,13 +492,14 @@
                 }
             }
             
-            if (uploadedFiles.length > 0) {
-                emptyState.style.display = 'none';
+            if (uploadedFiles.length > 0 || document.querySelectorAll('.preview-item').length > 0) {
                 previewTitle.style.display = 'block';
+                updatePhotoCount();
             }
         }
 
-        function createPreview(file) {
+        // Yeni dosya önizlemesi (yükleme sırasında)
+        function createNewFilePreview(file) {
             console.log('Önizleme oluşturuluyor:', file.name);
             
             const previewItem = document.createElement('div');
@@ -455,6 +553,11 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
+        function updatePhotoCount() {
+            const totalPhotos = document.querySelectorAll('.preview-item').length;
+            previewTitle.textContent = `Fotoğraflarınız (${totalPhotos})`;
+        }
+
         function removeFile(button) {
             const previewItem = button.parentElement;
             const fileName = previewItem.dataset.fileName;
@@ -462,19 +565,42 @@
             // Dosyayı uploadedFiles listesinden çıkar
             uploadedFiles = uploadedFiles.filter(file => file.name !== fileName);
             
-            // Eğer sunucuya yüklenmişse URL'yi de kaldır
-            uploadedUrls = uploadedUrls.filter(item => item.originalName !== fileName);
-            
             // DOM'dan kaldır
             previewItem.remove();
             
-            // Eğer hiç dosya kalmadıysa boş durum mesajını göster
-            if (uploadedFiles.length === 0) {
-                emptyState.style.display = 'block';
+            // Sayıyı güncelle
+            updatePhotoCount();
+            
+            // Eğer hiç dosya kalmadıysa empty state göster
+            if (document.querySelectorAll('.preview-item').length === 0) {
+                showEmptyState();
                 previewTitle.style.display = 'none';
             }
             
-            console.log('Dosya silindi:', fileName);
+            console.log('Yeni dosya silindi:', fileName);
+        }
+
+        function removeExistingFile(button) {
+            const previewItem = button.parentElement;
+            const fileName = previewItem.dataset.fileName;
+            
+            // Konfirmasyon
+            if (confirm(`${fileName} dosyasını silmek istediğinize emin misiniz?`)) {
+                // DOM'dan kaldır
+                previewItem.remove();
+                
+                // Sayıyı güncelle
+                updatePhotoCount();
+                
+                // Eğer hiç dosya kalmadıysa empty state göster
+                if (document.querySelectorAll('.preview-item').length === 0) {
+                    showEmptyState();
+                    previewTitle.style.display = 'none';
+                }
+                
+                console.log('Mevcut fotoğraf silindi:', fileName);
+                // TODO: İleride Cloudinary'den de silebiliriz
+            }
         }
 
         async function uploadToServer(file) {
@@ -489,6 +615,7 @@
                 // FormData oluştur
                 const formData = new FormData();
                 formData.append('file', file);
+                formData.append('userId', currentUserId); // User ID'yi ekle
                 
                 // Sunucuya gönder
                 const response = await fetch(`${API_BASE}/api/upload`, {
@@ -511,14 +638,24 @@
                     
                     // UI güncelle
                     previewItem.dataset.uploadStatus = 'success';
+                    previewItem.dataset.photoId = result.data.id;
                     progressFill.style.width = '100%';
                     uploadStatus.textContent = 'Yüklendi ✓';
+                    
+                    // Progress bar'ı kaldır
+                    const progressBar = previewItem.querySelector('.progress-bar');
+                    if (progressBar) {
+                        progressBar.remove();
+                    }
                     
                     // Overlay'i gizle
                     setTimeout(() => {
                         const overlay = previewItem.querySelector('.upload-overlay');
                         overlay.classList.add('hidden');
                     }, 1000);
+                    
+                    // Sayıyı güncelle
+                    updatePhotoCount();
                     
                 } else {
                     throw new Error(result.error || 'Bilinmeyen hata');
@@ -537,9 +674,10 @@
             }
         }
 
-        // Sayfa yüklendiğinde mesaj
+        // Sayfa yüklendiğinde
         window.addEventListener('load', function() {
             console.log('Fotoğraf yükleme sayfası hazır!');
+            loadExistingPhotos();
         });
     </script>
 </body>
