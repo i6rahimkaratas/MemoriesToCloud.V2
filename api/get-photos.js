@@ -31,30 +31,64 @@ export default async function handler(req, res) {
 
     console.log('Fotoğraflar getiriliyor, User ID:', userId);
     
-    // Cloudinary'den belirli kullanıcının fotoğraflarını getir
-    const result = await cloudinary.search
-      .expression(`folder:photo-uploader/${userId}`)
-      .sort_by([['created_at', 'desc']])
-      .max_results(100)
-      .execute();
+    // Admin API ile basit resource listesi
+    let allResources = [];
+    
+    try {
+      // Image files
+      const imageResult = await cloudinary.api.resources({
+        type: 'upload',
+        prefix: `photo-uploader/${userId}`,
+        max_results: 100,
+        resource_type: 'image'
+      });
+      
+      console.log('Image resources:', imageResult.resources?.length || 0);
+      if (imageResult.resources) {
+        allResources = [...allResources, ...imageResult.resources];
+      }
+    } catch (imageError) {
+      console.log('Image fetch error:', imageError.message);
+    }
 
-    console.log('Bulunan dosya sayısı:', result.resources.length);
+    try {
+      // Video files  
+      const videoResult = await cloudinary.api.resources({
+        type: 'upload',
+        prefix: `photo-uploader/${userId}`,
+        max_results: 100,
+        resource_type: 'video'
+      });
+      
+      console.log('Video resources:', videoResult.resources?.length || 0);
+      if (videoResult.resources) {
+        allResources = [...allResources, ...videoResult.resources];
+      }
+    } catch (videoError) {
+      console.log('Video fetch error:', videoError.message);
+    }
+    
+    console.log('Toplam bulunan dosya sayısı:', allResources.length);
 
     // Dosyaları formatla
-    const photos = result.resources.map(resource => ({
+    const photos = allResources.map(resource => ({
       id: resource.public_id,
       url: resource.secure_url,
-      originalName: resource.filename,
-      size: resource.bytes,
+      originalName: resource.filename || resource.display_name || resource.public_id.split('/').pop(),
+      size: resource.bytes || 0,
       type: resource.resource_type === 'video' ? 'video' : 'image',
       uploadDate: resource.created_at,
       format: resource.format
     }));
 
+    // Manuel sıralama - en yeni önce
+    photos.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
+
     res.status(200).json({
       success: true,
       data: photos,
-      count: photos.length
+      count: photos.length,
+      userId: userId
     });
 
   } catch (error) {
