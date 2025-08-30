@@ -307,11 +307,8 @@
                     <h3>Dosyalarınızı buraya sürükleyin</h3>
                     <p>veya tıklayarak seçin (Fotoğraf ve Video)</p>
                 </div>
-                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                <button class="upload-btn" onclick="selectFiles()">
                     Dosya Seç
-                </button>
-                <button class="upload-btn" onclick="showUploadedUrls()" style="margin-left: 10px; background: linear-gradient(45deg, #ff6b6b, #feca57);">
-                    URL'leri Göster
                 </button>
             </div>
             <input type="file" id="fileInput" class="file-input" multiple accept="image/*,video/*">
@@ -335,18 +332,26 @@
         const emptyState = document.getElementById('emptyState');
         
         let uploadedFiles = [];
-        let uploadedUrls = []; // Sunucuya yüklenen dosyaların URL'leri
+        let uploadedUrls = [];
 
-        // API base URL - deploy edildikten sonra değişecek
+        // API base URL
         const API_BASE = window.location.hostname === 'localhost' 
             ? 'http://localhost:3000' 
             : window.location.origin;
 
+        // Dosya seçim fonksiyonu
+        function selectFiles() {
+            fileInput.click();
+        }
+
         // Dosya input değişikliği
-        fileInput.addEventListener('change', handleFiles);
+        fileInput.addEventListener('change', function(e) {
+            handleFiles(e);
+            // Input'u temizle - bu sorunu çözüyor!
+            e.target.value = '';
+        });
 
         // Drag and drop olayları
-        uploadBox.addEventListener('click', () => fileInput.click());
         uploadBox.addEventListener('dragover', handleDragOver);
         uploadBox.addEventListener('dragleave', handleDragLeave);
         uploadBox.addEventListener('drop', handleDrop);
@@ -383,7 +388,7 @@
                 if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
                     uploadedFiles.push(file);
                     createPreview(file);
-                    uploadToServer(file); // Sunucuya yükle
+                    uploadToServer(file);
                 } else {
                     console.log('Desteklenmeyen dosya tipi:', file.type);
                     alert('Desteklenmeyen dosya tipi: ' + file.name);
@@ -402,7 +407,7 @@
             const previewItem = document.createElement('div');
             previewItem.className = 'preview-item';
             previewItem.dataset.fileName = file.name;
-            previewItem.dataset.uploadStatus = 'uploading'; // Yükleme durumu
+            previewItem.dataset.uploadStatus = 'uploading';
 
             const isVideo = file.type.startsWith('video/');
             const mediaElement = isVideo ? 'video' : 'img';
@@ -426,7 +431,7 @@
 
             previewGrid.appendChild(previewItem);
 
-            // Dosya okuma ve önizleme (lokal önizleme)
+            // Dosya okuma ve önizleme
             const reader = new FileReader();
             
             reader.onload = function(e) {
@@ -529,17 +534,6 @@
                 
                 // Kullanıcıya bilgi ver
                 alert(`Dosya yüklenirken hata: ${file.name}\nHata: ${error.message}`);
-            }
-        }
-
-        // Yüklenen dosyaların URL'lerini göster (test için)
-        function showUploadedUrls() {
-            console.log('Yüklenen dosyalar:', uploadedUrls);
-            if (uploadedUrls.length > 0) {
-                const urls = uploadedUrls.map(item => item.url).join('\n');
-                alert('Yüklenen dosya URL\'leri:\n\n' + urls);
-            } else {
-                alert('Henüz yüklenmiş dosya yok.');
             }
         }
 
